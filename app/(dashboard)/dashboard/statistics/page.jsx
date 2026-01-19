@@ -1,6 +1,6 @@
 "use client";
 import { getUserData } from "@/server_functions/getUserData";
-import { ExternalLink, Eye, Loader2 } from "lucide-react";
+import { ExternalLink, Eye, Loader2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import CountUp from "react-countup";
@@ -13,6 +13,7 @@ import { getHourlyBreakdown } from "@/server_functions/getHourlyBreakdown";
 import { getPeakHours } from "@/server_functions/getPeakHours";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { Button } from "@/components/ui/button";
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
 
 export default function page() {
@@ -30,6 +31,7 @@ export default function page() {
     const [hourlyBreakdown, setHourlyBreakdown] = useState([]);
     const [peakHours, setPeakHours] = useState({ peakHours: [], peakDays: [], topHour: null, topDay: null });
     const [analyticsLoading, setAnalyticsLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
 
     const getAllData = async () => {
         const [allClicks, topLinks, allLinks] = await getUserData();
@@ -39,7 +41,13 @@ export default function page() {
         setLoading(false);
     };
     
-    const getAnalyticsData = async () => {
+    const getAnalyticsData = async (isRefresh = false) => {
+        if (isRefresh) {
+            setRefreshing(true);
+        } else {
+            setAnalyticsLoading(true);
+        }
+        
         try {
             // Fetch all analytics data in parallel
             const [timeData, geoData, devData, refData, uniqueData, hourlyData, peakData] = await Promise.all([
@@ -60,9 +68,11 @@ export default function page() {
             setHourlyBreakdown(hourlyData);
             setPeakHours(peakData);
             setAnalyticsLoading(false);
+            setRefreshing(false);
         } catch (err) {
             console.error("Error loading analytics:", err);
             setAnalyticsLoading(false);
+            setRefreshing(false);
         }
     };
 
@@ -82,8 +92,55 @@ export default function page() {
         return `${hour - 12}pm`;
     };
     
+    // Convert UTC hour to user's local timezone hour
+    const convertUTCToLocalHour = (utcHour) => {
+        // Create a date object for today at the UTC hour
+        const now = new Date();
+        const utcDate = new Date(Date.UTC(
+            now.getUTCFullYear(),
+            now.getUTCMonth(),
+            now.getUTCDate(),
+            utcHour,
+            0,
+            0
+        ));
+        
+        // Get the local hour from this UTC date
+        return utcDate.getHours();
+    };
+    
+    // Convert peak hours from UTC to user's local timezone
+    const convertPeakHoursToLocal = (peakHoursData) => {
+        return peakHoursData.map(item => ({
+            ...item,
+            localHour: convertUTCToLocalHour(item.hour),
+            hour: convertUTCToLocalHour(item.hour) // Use local hour for display
+        }));
+    };
+    
     return (
         <main className="px-6 md:px-20 lg:px-44 py-10 grid gap-7">
+            {/* Header with refresh button */}
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-2xl font-bold">Statistics</h1>
+                    <p className="text-sm text-muted-foreground">Analytics overview for all your links</p>
+                </div>
+                <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                        getAllData();
+                        getAnalyticsData(true);
+                    }}
+                    disabled={refreshing || loading || analyticsLoading}
+                    className="flex items-center gap-2"
+                >
+                    <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                    Refresh
+                </Button>
+            </div>
+            
             <div className="border rounded-lg grid grid-cols-2 md:grid-cols-4 bg-card shadow-sm">
                 <div className="text-center p-4 border-r border-border">
                     <h2 className="text-2xl"><CountUp end={totalLinks.length} start={0} /></h2>
@@ -107,63 +164,121 @@ export default function page() {
                 </div>
             </div>
             
-            {/* Time Series Chart */}
-            <Card>
-                <CardHeader>
-                    <CardTitle>Clicks Over Time (Last 30 Days)</CardTitle>
-                    <CardDescription>Daily click trends for all your links</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    {analyticsLoading ? (
-                        <div className="grid place-items-center h-60">
-                            <Loader2 className="animate-spin h-4 w-5" />
-                        </div>
-                    ) : timeSeriesData.length > 0 ? (
-                        <ChartContainer config={{ clicks: { label: "Clicks" } }}>
-                            <LineChart data={timeSeriesData}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="date" />
-                                <YAxis />
-                                <ChartTooltip content={<ChartTooltipContent />} />
-                                <Line type="monotone" dataKey="clicks" stroke="hsl(var(--chart-1))" strokeWidth={2} />
-                            </LineChart>
-                        </ChartContainer>
-                    ) : (
-                        <div className="grid place-items-center h-60">
-                            <p className="text-sm text-muted-foreground">No data available</p>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
+            {/* Top Links and All Links */}
+            <div className="grid gap-7 md:gap-3 md:grid-cols-2">
+                <div className="border h-fit border-border rounded-lg px-4 py-4 bg-card shadow-sm">
+                    <div>
+                        <h2 className="text-lg">Top {top5Links.filter((link) => link.clicks).length} Links</h2>
+                        <p className="text-sm text-muted-foreground">the top {top5Links.filter((link) => link.clicks).length} links by clicks</p>
+                    </div>
+                    <div className="border-dashed rounded-lg mt-4 border border-border">
+                        {loading && (
+                            <div className="grid place-items-center h-60">
+                                <Loader2 className="animate-spin h-4 w-5" />
+                            </div>
+                        )}
+                        {top5Links.filter((link) => link.clicks).map((link) => (
+                            <div key={link._id} className="grid gap-2 p-4 linkList">
+                                <Link target="_blank" className="text-sm opacity-85 flex items-center justify-between" href={`https://${location.host}/${link.alias}`}>
+                                    <span className="hover:underline">https://{location.host}/{link.alias}</span> <p className="text-sm text-muted-foreground flex items-center gap-1 bg-accent/50 rounded-full px-2 cursor-pointer py-1 w-fit"><CountUp end={link.clicks > 2 ? link.clicks - 1 : link.clicks} start={0} /> <Eye className="h-4 w-4" /></p>
+                                </Link>
+                            </div>
+                        ))}
+                        {!loading && !top5Links.filter((link) => link.clicks).length &&
+                            (<div className="grid gap-2 p-4 place-items-center h-60">
+                                <p className="text-sm text-muted-foreground">No links found.</p>
+                            </div>)
+                        }
+                    </div>
+                </div>
+
+                <div className="border h-fit border-border rounded-lg px-4 py-4 bg-card shadow-sm">
+                    <div>
+                        <h2 className="text-lg">All Links & Clicks</h2>
+                        <p className="text-sm text-muted-foreground">all your links and their clicks</p>
+                    </div>
+                    <div className="border-dashed rounded-lg mt-4 border border-border">
+                        {loading && (
+                            <div className="grid place-items-center h-60">
+                                <Loader2 className="animate-spin h-4 w-5" />
+                            </div>
+                        )}
+                        {!loading && !totalLinks.length ? (
+                            <div className="grid place-items-center h-60">
+                                <p className="text-sm text-muted-foreground">No links found.</p>
+                            </div>
+                        ) : null}
+                        {totalLinks.map((link) => (
+                            <div key={link._id} className="grid gap-2 p-4 linkList">
+                                <Link target="_blank" className="text-sm opacity-85 flex items-center justify-between" href={`https://${location.host}/${link.alias}`}>
+                                    <span className="hover:underline">https://{location.host}/{link.alias}</span> <p className="text-sm text-muted-foreground flex items-center gap-1 bg-accent/50 rounded-full px-2 cursor-pointer py-1 w-fit"><CountUp end={link.clicks > 2 ? link.clicks - 1 : link.clicks} start={0} /> <Eye className="h-4 w-4" /></p>
+                                </Link>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
             
-            {/* Geographic Chart */}
-            <Card>
-                <CardHeader>
-                    <CardTitle>Top Countries</CardTitle>
-                    <CardDescription>Geographic distribution of clicks</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    {analyticsLoading ? (
-                        <div className="grid place-items-center h-60">
-                            <Loader2 className="animate-spin h-4 w-5" />
-                        </div>
-                    ) : geographicData.countries.length > 0 ? (
-                        <ChartContainer config={{ clicks: { label: "Clicks" } }}>
-                            <BarChart data={geographicData.countries}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="country" />
-                                <YAxis />
-                                <ChartTooltip content={<ChartTooltipContent />} />
-                                <Bar dataKey="clicks" fill="hsl(var(--chart-1))" />
-                            </BarChart>
-                        </ChartContainer>
-                    ) : (
-                        <div className="grid place-items-center h-60">
-                            <p className="text-sm text-muted-foreground">No data available</p>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
+            {/* Time Series Chart and Geographic Chart in same row */}
+            <div className="grid gap-7 md:gap-3 md:grid-cols-2">
+                {/* Time Series Chart */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Clicks Over Time (Last 30 Days)</CardTitle>
+                        <CardDescription>Daily click trends for all your links</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {analyticsLoading ? (
+                            <div className="grid place-items-center h-60">
+                                <Loader2 className="animate-spin h-4 w-5" />
+                            </div>
+                        ) : timeSeriesData.length > 0 ? (
+                            <ChartContainer config={{ clicks: { label: "Clicks" } }}>
+                                <LineChart data={timeSeriesData}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="date" />
+                                    <YAxis />
+                                    <ChartTooltip content={<ChartTooltipContent />} />
+                                    <Line type="monotone" dataKey="clicks" stroke="hsl(var(--chart-1))" strokeWidth={2} />
+                                </LineChart>
+                            </ChartContainer>
+                        ) : (
+                            <div className="grid place-items-center h-60">
+                                <p className="text-sm text-muted-foreground">No data available</p>
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+                
+                {/* Geographic Chart */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Top Countries</CardTitle>
+                        <CardDescription>Geographic distribution of clicks</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {analyticsLoading ? (
+                            <div className="grid place-items-center h-60">
+                                <Loader2 className="animate-spin h-4 w-5" />
+                            </div>
+                        ) : geographicData.countries.length > 0 ? (
+                            <ChartContainer config={{ clicks: { label: "Clicks" } }}>
+                                <BarChart data={geographicData.countries}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="country" />
+                                    <YAxis />
+                                    <ChartTooltip content={<ChartTooltipContent />} />
+                                    <Bar dataKey="clicks" fill="hsl(var(--chart-1))" />
+                                </BarChart>
+                            </ChartContainer>
+                        ) : (
+                            <div className="grid place-items-center h-60">
+                                <p className="text-sm text-muted-foreground">No data available</p>
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+            </div>
             
             <div className="grid gap-7 md:gap-3 md:grid-cols-2">
                 {/* Device Type Chart */}
@@ -306,7 +421,7 @@ export default function page() {
             <Card>
                 <CardHeader>
                     <CardTitle>Hourly Breakdown</CardTitle>
-                    <CardDescription>Clicks by hour of day across all links (last 30 days)</CardDescription>
+                    <CardDescription>Clicks by hour of day across all links (last 30 days) - {Intl.DateTimeFormat().resolvedOptions().timeZone}</CardDescription>
                 </CardHeader>
                 <CardContent>
                     {analyticsLoading ? (
@@ -315,26 +430,19 @@ export default function page() {
                         </div>
                     ) : hourlyBreakdown.length > 0 ? (
                         <ChartContainer config={{ clicks: { label: "Clicks" } }}>
-                            <BarChart data={hourlyBreakdown}>
+                            <BarChart data={hourlyBreakdown.map(item => ({
+                                ...item,
+                                hour: convertUTCToLocalHour(item.hour)
+                            }))}>
                                 <CartesianGrid strokeDasharray="3 3" />
                                 <XAxis 
                                     dataKey="hour" 
-                                    tickFormatter={(value) => {
-                                        if (value === 0) return "12am";
-                                        if (value < 12) return `${value}am`;
-                                        if (value === 12) return "12pm";
-                                        return `${value - 12}pm`;
-                                    }}
+                                    tickFormatter={(value) => formatHour(value)}
                                 />
                                 <YAxis />
                                 <ChartTooltip 
                                     content={<ChartTooltipContent />}
-                                    labelFormatter={(value) => {
-                                        if (value === 0) return "12am";
-                                        if (value < 12) return `${value}am`;
-                                        if (value === 12) return "12pm";
-                                        return `${value - 12}pm`;
-                                    }}
+                                    labelFormatter={(value) => formatHour(value)}
                                 />
                                 <Bar dataKey="clicks" fill="hsl(var(--chart-1))" />
                             </BarChart>
@@ -354,8 +462,8 @@ export default function page() {
                         <CardTitle>Peak Hours of Day</CardTitle>
                         <CardDescription>
                             {peakHours.topHour 
-                                ? `Peak hour: ${formatHour(peakHours.topHour.hour)} (${peakHours.topHour.clicks} clicks)`
-                                : "Busiest hours across all links"}
+                                ? `Peak hour: ${formatHour(convertUTCToLocalHour(peakHours.topHour.hour))} (${peakHours.topHour.clicks} clicks) - ${Intl.DateTimeFormat().resolvedOptions().timeZone}`
+                                : `Busiest hours across all links - ${Intl.DateTimeFormat().resolvedOptions().timeZone}`}
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -365,7 +473,7 @@ export default function page() {
                             </div>
                         ) : peakHours.peakHours.length > 0 ? (
                             <ChartContainer config={{ clicks: { label: "Clicks" } }}>
-                                <BarChart data={peakHours.peakHours}>
+                                <BarChart data={convertPeakHoursToLocal(peakHours.peakHours)}>
                                     <CartesianGrid strokeDasharray="3 3" />
                                     <XAxis 
                                         dataKey="hour" 
@@ -418,66 +526,6 @@ export default function page() {
                         )}
                     </CardContent>
                 </Card>
-            </div>
-
-            <div className="grid gap-7 md:gap-3 md:grid-cols-2">
-
-                <div className="border h-fit border-border rounded-lg px-4 py-4 bg-card shadow-sm">
-                    <div>
-                        <h2 className="text-lg">Top {top5Links.filter((link) => link.clicks).length} Links</h2>
-                        <p className="text-sm text-muted-foreground">the top {top5Links.filter((link) => link.clicks).length} links by clicks</p>
-                    </div>
-                    <div className="border-dashed rounded-lg mt-4 border border-border">
-                        {loading && (
-                            <div className="grid place-items-center h-60">
-                                <Loader2 className="animate-spin h-4 w-5" />
-                            </div>
-                        )}
-                        {/* {!loading && !top5Links.length ? (
-                            <div className="grid place-items-center h-60">
-                                <p className="text-sm text-muted-foreground">No links found.</p>
-                            </div>
-                        ) : null} */}
-                        {top5Links.filter((link) => link.clicks).map((link) => (
-                            <div key={link._id} className="grid gap-2 p-4 linkList">
-                                <Link target="_blank" className="text-sm opacity-85 flex items-center justify-between" href={`https://${location.host}/${link.alias}`}>
-                                    <span className="hover:underline">https://{location.host}/{link.alias}</span> <p className="text-sm text-muted-foreground flex items-center gap-1 bg-accent/50 rounded-full px-2 cursor-pointer py-1 w-fit"><CountUp end={link.clicks > 2 ? link.clicks - 1 : link.clicks} start={0} /> <Eye className="h-4 w-4" /></p>
-                                </Link>
-                            </div>
-                        ))}
-                        {!loading && !top5Links.filter((link) => link.clicks).length &&
-                            (<div className="grid gap-2 p-4 place-items-center h-60">
-                                <p className="text-sm text-muted-foreground">No links found.</p>
-                            </div>)
-                        }
-                    </div>
-                </div>
-
-                <div className="border h-fit border-border rounded-lg px-4 py-4 bg-card shadow-sm">
-                    <div>
-                        <h2 className="text-lg">All Links & Clicks</h2>
-                        <p className="text-sm text-muted-foreground">all your links and their clicks</p>
-                    </div>
-                    <div className="border-dashed rounded-lg mt-4 border border-border">
-                        {loading && (
-                            <div className="grid place-items-center h-60">
-                                <Loader2 className="animate-spin h-4 w-5" />
-                            </div>
-                        )}
-                        {!loading && !totalLinks.length ? (
-                            <div className="grid place-items-center h-60">
-                                <p className="text-sm text-muted-foreground">No links found.</p>
-                            </div>
-                        ) : null}
-                        {totalLinks.map((link) => (
-                            <div key={link._id} className="grid gap-2 p-4 linkList">
-                                <Link target="_blank" className="text-sm opacity-85 flex items-center justify-between" href={`https://${location.host}/${link.alias}`}>
-                                    <span className="hover:underline">https://{location.host}/{link.alias}</span> <p className="text-sm text-muted-foreground flex items-center gap-1 bg-accent/50 rounded-full px-2 cursor-pointer py-1 w-fit"><CountUp end={link.clicks > 2 ? link.clicks - 1 : link.clicks} start={0} /> <Eye className="h-4 w-4" /></p>
-                                </Link>
-                            </div>
-                        ))}
-                    </div>
-                </div>
             </div>
         </main>
     )
