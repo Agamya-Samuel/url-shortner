@@ -1,7 +1,7 @@
 "use client";
 
 import getAllLinks from "@/server_functions/getAllLinks";
-import { Copy, EllipsisVertical, ExternalLink, Eye, Loader2, Pencil, Trash, BarChart3 } from "lucide-react";
+import { Copy, EllipsisVertical, ExternalLink, Eye, Loader2, Pencil, Trash, BarChart3, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -117,9 +117,21 @@ export default function page() {
                             <div>
                                 {allLinks.map((link) => (
                                     <div key={link._id} className="grid gap-2 p-4 linkList">
-                                        <Link target="_blank" className="text-sm opacity-85 hover:underline flex items-center justify-between" href={`https://${location.host}/${link.alias}`}>
-                                            <span>https://{location.host}/{link.alias}</span> <ExternalLink className="h-3 w-3" />
-                                        </Link>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <Link target="_blank" className="text-sm opacity-85 hover:underline flex items-center gap-1" href={`https://${location.host}/${link.alias}`}>
+                                                <span>https://{location.host}/{link.alias}</span> <ExternalLink className="h-3 w-3" />
+                                            </Link>
+                                            <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                                            <a
+                                                href={link.destination_url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-sm text-muted-foreground hover:underline truncate max-w-md"
+                                                title={link.destination_url}
+                                            >
+                                                {link.destination_url}
+                                            </a>
+                                        </div>
                                         <div className="flex gap-2 items-center">
                                             <p className="text-sm text-muted-foreground flex items-center gap-1 bg-accent/50 rounded-full px-2 cursor-pointer py-1 w-fit"><CountUp end={link.clicks > 2 ? link.clicks - 1 : link.clicks} start={0} /> <Eye className="h-4 w-4" /></p>
                                             <DropdownMenu>
