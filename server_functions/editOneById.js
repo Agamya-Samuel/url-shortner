@@ -12,7 +12,8 @@ export default async function editOneById({ id, url, ali }) {
         const oldData = await short_url.findOne({ _id: id, author: user.emailAddresses[0].emailAddress });
         const oldAlias = oldData?.alias;
         
-        const getAlias = await short_url.findOne({ alias: ali });
+        // Check if alias exists, but exclude the current record being edited
+        const getAlias = await short_url.findOne({ alias: ali, _id: { $ne: id } });
         if (getAlias) return JSON.stringify({ message: "Alias already exists!" });
         
         const data = await short_url.findByIdAndUpdate({ _id: id, author: user.emailAddresses[0].emailAddress }, { destination_url: url, alias: ali });
