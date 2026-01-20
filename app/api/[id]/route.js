@@ -5,9 +5,13 @@ import { connectToDb } from "@/server_functions/mongodb/connect";
 import { hashIp } from "@/server_functions/utils/hashIp";
 import { UAParser } from "ua-parser-js";
 
+// Enable caching for 30 days (2592000 seconds)
+export const revalidate = 2592000;
+
 /**
  * API route for handling URL redirects with analytics capture
  * This route captures detailed analytics about each click before redirecting
+ * Cached for 30 days to improve performance
  */
 export async function GET(request, { params }) {
     try {
@@ -123,8 +127,14 @@ export async function GET(request, { params }) {
             { $inc: { clicks: 1 } }
         );
         
-        // Redirect to destination URL
-        return NextResponse.redirect(urlData.destination_url, { status: 302 });
+        // Redirect to destination URL with caching headers
+        const response = NextResponse.redirect(urlData.destination_url, { status: 302 });
+        
+        // Add Cache-Control header for 30 days (2592000 seconds)
+        // This allows browsers and CDNs to cache the redirect
+        response.headers.set('Cache-Control', 'public, max-age=2592000, s-maxage=2592000, stale-while-revalidate=86400');
+        
+        return response;
         
     } catch (error) {
         console.error("Redirect error:", error);
