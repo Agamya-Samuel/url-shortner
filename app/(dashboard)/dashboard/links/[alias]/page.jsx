@@ -40,6 +40,9 @@ export default function LinkAnalyticsPage() {
     const [clickLog, setClickLog] = useState({ clicks: [], total: 0, page: 1, totalPages: 0 });
     const [clickLogPage, setClickLogPage] = useState(1);
     const [clickLogLoading, setClickLogLoading] = useState(false);
+    const [clickTimeline, setClickTimeline] = useState({ clicks: [], total: 0, page: 1, totalPages: 0 });
+    const [clickTimelinePage, setClickTimelinePage] = useState(1);
+    const [clickTimelineLoading, setClickTimelineLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     
     const fetchAnalytics = async (isRefresh = false) => {
@@ -51,7 +54,7 @@ export default function LinkAnalyticsPage() {
         
         try {
             // Fetch all analytics data for this specific link
-            const [linkInfo, timeData, geoData, devData, refData, uniqueData, hourlyData, peakData, logData] = await Promise.all([
+            const [linkInfo, timeData, geoData, devData, refData, uniqueData, hourlyData, peakData, logData, timelineData] = await Promise.all([
                 getLinkAnalytics(alias),
                 getTimeSeriesData(alias, "day", 30),
                 getGeographicData(alias, 10),
@@ -60,7 +63,8 @@ export default function LinkAnalyticsPage() {
                 getUniqueVisitors(alias),
                 getHourlyBreakdown(alias, 30),
                 getPeakHours(alias, 30),
-                getClickLog(alias, clickLogPage, 20)
+                getClickLog(alias, clickLogPage, 10),
+                getClickLog(alias, clickTimelinePage, 10)
             ]);
             
             if (!linkInfo) {
@@ -78,6 +82,7 @@ export default function LinkAnalyticsPage() {
             setHourlyBreakdown(hourlyData);
             setPeakHours(peakData);
             setClickLog(logData);
+            setClickTimeline(timelineData);
             setLoading(false);
             setRefreshing(false);
         } catch (err) {
@@ -99,7 +104,7 @@ export default function LinkAnalyticsPage() {
             if (!alias) return;
             setClickLogLoading(true);
             try {
-                const logData = await getClickLog(alias, clickLogPage, 20);
+                const logData = await getClickLog(alias, clickLogPage, 10);
                 setClickLog(logData);
             } catch (err) {
                 console.error("Error loading click log:", err);
@@ -112,6 +117,26 @@ export default function LinkAnalyticsPage() {
             fetchClickLog();
         }
     }, [clickLogPage, alias]);
+    
+    // Fetch click timeline when page changes
+    useEffect(() => {
+        const fetchClickTimeline = async () => {
+            if (!alias) return;
+            setClickTimelineLoading(true);
+            try {
+                const timelineData = await getClickLog(alias, clickTimelinePage, 10);
+                setClickTimeline(timelineData);
+            } catch (err) {
+                console.error("Error loading click timeline:", err);
+            } finally {
+                setClickTimelineLoading(false);
+            }
+        };
+        
+        if (clickTimelinePage > 1) {
+            fetchClickTimeline();
+        }
+    }, [clickTimelinePage, alias]);
     
     // Format timestamp helper - displays in user's local timezone
     const formatTimestamp = (timestamp) => {
@@ -352,14 +377,18 @@ export default function LinkAnalyticsPage() {
             <Card>
                 <CardHeader>
                     <CardTitle>Click Timeline</CardTitle>
-                    <CardDescription>Chronological view of recent clicks</CardDescription>
+                    <CardDescription>Chronological view of recent clicks ({clickTimeline.total} total)</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    {clickLog.clicks.length > 0 ? (
+                    {clickTimelineLoading ? (
+                        <div className="grid place-items-center h-60">
+                            <Loader2 className="animate-spin h-4 w-5" />
+                        </div>
+                    ) : clickTimeline.clicks.length > 0 ? (
                         <div className="space-y-4">
-                            {clickLog.clicks.map((click, index) => {
+                            {clickTimeline.clicks.map((click, index) => {
                                 const clickDate = new Date(click.timestamp);
-                                const prevClickDate = index > 0 ? new Date(clickLog.clicks[index - 1].timestamp) : null;
+                                const prevClickDate = index > 0 ? new Date(clickTimeline.clicks[index - 1].timestamp) : null;
                                 const isNewDay = !prevClickDate || 
                                     clickDate.toDateString() !== prevClickDate.toDateString();
                                 
@@ -400,6 +429,33 @@ export default function LinkAnalyticsPage() {
                                     </div>
                                 );
                             })}
+                            
+                            {/* Pagination */}
+                            {clickTimeline.totalPages > 1 && (
+                                <div className="flex items-center justify-between pt-4">
+                                    <div className="text-sm text-muted-foreground">
+                                        Page {clickTimeline.page} of {clickTimeline.totalPages}
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setClickTimelinePage(p => Math.max(1, p - 1))}
+                                            disabled={clickTimelinePage === 1 || clickTimelineLoading}
+                                        >
+                                            Previous
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setClickTimelinePage(p => Math.min(clickTimeline.totalPages, p + 1))}
+                                            disabled={clickTimelinePage === clickTimeline.totalPages || clickTimelineLoading}
+                                        >
+                                            Next
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div className="grid place-items-center h-60">
